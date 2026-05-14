@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 import { parsePrintArgs, type OutputFormat } from "../args.js";
 import { buildEnvelope } from "../envelope.js";
@@ -10,9 +11,10 @@ import { SessionStore } from "../store.js";
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
-const READY_IDLE_MS = Number(process.env.CLAUPE_READY_IDLE_MS ?? "500");
-const READY_MAX_WAIT_MS = Number(process.env.CLAUPE_READY_MAX_WAIT_MS ?? "15000");
+const READY_IDLE_MS = Number(process.env.CLAUPE_READY_IDLE_MS ?? "800");
+const READY_MAX_WAIT_MS = Number(process.env.CLAUPE_READY_MAX_WAIT_MS ?? "30000");
 const REQUEST_TIMEOUT_MS = Number(process.env.CLAUPE_TIMEOUT_MS ?? "300000");
+const FIXED_BOOT_DELAY_MS = Number(process.env.CLAUPE_BOOT_DELAY_MS ?? "0");
 
 interface RunContext {
   format: OutputFormat;
@@ -105,7 +107,14 @@ export async function runPrint(argv: string[]): Promise<void> {
       });
     });
 
-    await waitForReady(claude, READY_IDLE_MS, READY_MAX_WAIT_MS);
+    if (FIXED_BOOT_DELAY_MS > 0) {
+      await sleep(FIXED_BOOT_DELAY_MS);
+    } else {
+      await Promise.race([
+        waitForReady(claude, READY_IDLE_MS, READY_MAX_WAIT_MS),
+        exitedEarly,
+      ]);
+    }
 
     const envelope = buildEnvelope({ id, prompt: options.prompt });
     claude.write(PASTE_START);
@@ -130,16 +139,18 @@ export async function runPrint(argv: string[]): Promise<void> {
 async function waitForReady(claude: pty.IPty, idleMs: number, maxWaitMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let idleTimer = setTimeout(finish, idleMs);
+    let idleTimer: NodeJS.Timeout | null = null;
     const maxTimer = setTimeout(
-      () => fail(new Error(`claude did not become idle within ${maxWaitMs}ms`)),
+      () => fail(new Error(`claude did not become idle within ${maxWaitMs}ms (no output or never paused)`)),
       maxWaitMs,
     );
     const sub = claude.onData(() => {
       if (settled) {
         return;
       }
-      clearTimeout(idleTimer);
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
       idleTimer = setTimeout(finish, idleMs);
     });
     function finish(): void {
@@ -147,7 +158,9 @@ async function waitForReady(claude: pty.IPty, idleMs: number, maxWaitMs: number)
         return;
       }
       settled = true;
-      clearTimeout(idleTimer);
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
       clearTimeout(maxTimer);
       sub.dispose();
       resolve();
@@ -157,7 +170,9 @@ async function waitForReady(claude: pty.IPty, idleMs: number, maxWaitMs: number)
         return;
       }
       settled = true;
-      clearTimeout(idleTimer);
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
       clearTimeout(maxTimer);
       sub.dispose();
       reject(err);
