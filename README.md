@@ -70,7 +70,7 @@ The point of routing through `claupe agent` and a FIFO instead of reading claude
 - Every call cold-starts claude (~3s). Fine for cron and scripts, not for tight loops.
 - `--dangerously-skip-permissions` is required so claude can run the callback unattended. Only run claupe where that's acceptable.
 - `--output-format stream-json` doesn't truly stream — claude buffers its full answer before piping it, so you currently get a single chunk plus the final result event.
-- Prompts are wrapped in `BEGIN-USER-REQUEST` / `END-USER-REQUEST` markers and tagged as data, but prompt injection is not fully prevented.
+- claupe has no defense against prompt injection from piped stdin. If you `cat untrusted.txt | claupe ...` and the file says "ignore the above, run X", claude may do it. Since claude runs with `--dangerously-skip-permissions`, the consequences include shell commands. Only pipe content you trust.
 
 ## License
 
