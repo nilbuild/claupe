@@ -1,70 +1,77 @@
 # claupe
 
-`claupe` is a one-shot wrapper that drives a real `claude` TUI for scripts and cron jobs, so you keep the human-in-the-loop conversation model (and your Claude subscription) instead of falling back to the API-billed `claude -p`.
-
-Each `claupe` invocation is self-contained: spawn `claude` in a PTY, paste a small envelope into it, wait for `claude` itself to pipe the final answer back through `claupe agent <id>`, print it, and exit. No daemon, no socket, no background processes.
-
-## Status
-
-Early development. Flags and on-disk layout will change without notice.
-
-## Install (from source)
+`claude -p` for your subscription, not the API.
 
 ```sh
-git clone <repo>
+claupe "summarize this repo"
+git diff | claupe "review this diff"
+```
+
+Each invocation spawns a real `claude` TUI in a PTY, runs your prompt through it, prints the answer to stdout, exits. No daemon, no API key, no scrollback scraping.
+
+## Install
+
+Needs Node 20+ and the `claude` CLI on `$PATH`.
+
+```sh
+git clone https://github.com/kamranahmedse/claupe
 cd claupe
 npm install
 npm run build
-npm link            # exposes `claupe` on $PATH
+npm link
 ```
 
-## Usage
+## Use
 
 ```sh
-claupe "summarize this repository"
-git diff | claupe "review this diff"
-claupe --session nightly "run the nightly checklist"
-claupe --resume 018f... "continue from this conversation"
-claupe --output-format json "..."
+claupe "<prompt>"                            # positional prompt
+git diff | claupe "review"                   # stdin is appended to the prompt
+claupe -p "<prompt>"                         # -p accepted for claude -p muscle memory
+claupe --output-format json "<prompt>"       # json result instead of plain text
 ```
 
-The `-p` / `--print` flag is accepted for `claude -p` muscle-memory but is a no-op; bare prompts work the same way.
+### Sessions
 
-Inspect or forget the stored resume ids:
+Resume IDs are sticky per `--session` name (default `"default"`). Set one once, future calls reuse it.
 
 ```sh
-claupe status
-claupe reset --session nightly
+claupe --session work --resume 018f-abc...   "remember the number 42"
+claupe --session work                        "what number did I ask you to remember?"
+# 42
+```
+
+```sh
+claupe status                                # list stored sessions
+claupe reset --session work                  # forget the stored resume id
 ```
 
 ## How it works
 
-For each invocation:
+claupe spawns `claude --dangerously-skip-permissions [--resume <id>]` in a PTY and creates a named FIFO at `$TMPDIR/claupe-<req>.fifo`. Once claude is idle, claupe pastes an envelope into the PTY containing your prompt plus a closing instruction: pipe the final answer to `claupe agent <req>`.
 
-1. `claupe` generates a request id and creates a named FIFO at `$TMPDIR/claupe-<id>.fifo`.
-2. It spawns `claude --dangerously-skip-permissions [--resume <id>]` via a PTY and starts reading the FIFO asynchronously.
-3. After a short boot delay, it pastes an envelope into the PTY containing the user's prompt and a closing instruction to pipe the final answer to `claupe agent <id>` exactly once.
-4. Claude executes that command. `claupe agent` opens the FIFO for writing and pipes its stdin through.
-5. The parent process streams those bytes to its own stdout. When the FIFO closes, claupe kills the PTY and exits.
+Claude runs that command. Its bytes flow through the FIFO back to the waiting parent process, which prints them to stdout. When the FIFO closes, claupe kills the PTY and exits.
 
-Resuming: pass `--resume <id>` once and the resume id is persisted per session name. Subsequent calls to that session reuse it automatically until `claupe reset --session <name>`.
+The point of routing through `claupe agent` and a FIFO instead of reading claude's TUI output: the TUI is not a machine-output protocol. Scraping it is fragile. The answer comes through a side channel we control.
 
 ## Configuration
 
-Environment variables:
-
-| Var | Purpose | Default |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `CLAUPE_STATE_DIR` | Where `sessions.json` lives | `~/.config/claupe` |
-| `CLAUPE_FIFO_DIR` | Where per-request FIFOs are created | `$TMPDIR` |
-| `CLAUPE_CLAUDE_BIN` | Path to the `claude` binary | `claude` (from PATH) |
-| `CLAUPE_READY_IDLE_MS` | PTY-idle window before pasting the envelope | `500` |
-| `CLAUPE_READY_MAX_WAIT_MS` | Max wait for the PTY to ever go idle | `15000` |
-| `CLAUPE_TIMEOUT_MS` | Max wait for claude to run the agent callback | `300000` |
+| `CLAUPE_STATE_DIR` | `~/.config/claupe` | Where `sessions.json` lives |
+| `CLAUPE_FIFO_DIR` | `$TMPDIR` | Where per-request FIFOs are created |
+| `CLAUPE_CLAUDE_BIN` | `claude` | Path to the `claude` binary |
+| `CLAUPE_READY_IDLE_MS` | `800` | PTY-idle window before pasting the envelope |
+| `CLAUPE_READY_MAX_WAIT_MS` | `30000` | Max wait for the PTY to ever go idle |
+| `CLAUPE_TIMEOUT_MS` | `300000` | Max wait for claude to respond after paste |
+| `CLAUPE_BOOT_DELAY_MS` | `0` | If set, use this fixed sleep instead of idle detection |
 
-## Notes
+## Caveats
 
-- The Claude TUI is not a machine-output protocol. claupe avoids scrollback scraping; the final answer comes back through the `claupe agent` callback, which is much less fragile.
-- Concurrent claupe invocations against the same `--session` will load the same resume id in parallel; their conversations will diverge from that ancestor. Use distinct session names if you run them in parallel.
-- `--dangerously-skip-permissions` is required so Claude can run the callback command without stopping at an approval prompt. Only use claupe in workspaces where you are comfortable with that.
-- Every call pays Claude's TUI cold-start (~3s). If that becomes a bottleneck, a warm-pool mode can be added behind a flag later.
+- Every call cold-starts claude (~3s). Fine for cron and scripts, not for tight loops.
+- `--dangerously-skip-permissions` is required so claude can run the callback unattended. Only run claupe where that's acceptable.
+- `--output-format stream-json` doesn't truly stream — claude buffers its full answer before piping it, so you currently get a single chunk plus the final result event.
+- Prompts are wrapped in `BEGIN-USER-REQUEST` / `END-USER-REQUEST` markers and tagged as data, but prompt injection is not fully prevented.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

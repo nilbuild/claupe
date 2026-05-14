@@ -3,6 +3,8 @@
   "version": "0.0.1",
   "description": "A claude -p shim that drives a real claude TUI per invocation",
   "type": "module",
+  "license": "MIT",
+  "author": "Kamran Ahmed",
   "bin": {
     "claupe": "dist/bin.js"
   },
