@@ -5,7 +5,6 @@ export interface PrintOptions {
   session: string;
   resume: string | null;
   outputFormat: OutputFormat;
-  noWait: boolean;
 }
 
 export interface SessionOnlyOptions {
@@ -22,7 +21,6 @@ const FLAGS_WITH_VALUE = new Set([
 const KNOWN_BOOLEAN_FLAGS = new Set([
   "-p",
   "--print",
-  "--no-wait",
 ]);
 
 interface ParsedArgs {
@@ -112,9 +110,8 @@ export async function parsePrintArgs(argv: string[]): Promise<PrintOptions> {
   const session = parsed.flags.get("--session") ?? "default";
   const resume = parsed.flags.get("--resume") ?? parsed.flags.get("-r") ?? null;
   const outputFormat = parseOutputFormat(parsed.flags.get("--output-format"));
-  const noWait = parsed.booleans.has("--no-wait");
 
-  return { prompt, session, resume, outputFormat, noWait };
+  return { prompt, session, resume, outputFormat };
 }
 
 export function parseSessionOnlyArgs(argv: string[]): SessionOnlyOptions {

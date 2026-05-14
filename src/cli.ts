@@ -1,12 +1,11 @@
 import { runPrint } from "./commands/print.js";
-import { runDaemon } from "./commands/daemon.js";
 import { runAgent } from "./commands/agent.js";
 import { runStatus } from "./commands/status.js";
 import { runReset } from "./commands/reset.js";
 
 const VERSION = "0.0.1";
 
-const SUBCOMMANDS = new Set(["daemon", "agent", "status", "reset"]);
+const SUBCOMMANDS = new Set(["agent", "status", "reset"]);
 
 export async function main(argv: string[]): Promise<void> {
   const first = argv[0];
@@ -22,10 +21,6 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   if (first !== undefined && SUBCOMMANDS.has(first)) {
-    if (first === "daemon") {
-      await runDaemon(argv.slice(1));
-      return;
-    }
     if (first === "agent") {
       await runAgent(argv.slice(1));
       return;
@@ -53,21 +48,19 @@ export async function main(argv: string[]): Promise<void> {
 function printHelp(): void {
   process.stdout.write(
     [
-      "claupe — a persistent-TUI shim for claude -p",
+      "claupe — a per-invocation shim that drives a real claude TUI",
       "",
       "Usage:",
       "  claupe [flags] <prompt>             Send a prompt and wait for the answer",
-      "  claupe daemon run                   Run the local daemon in the foreground",
-      "  claupe agent <request-id>           Internal: stream stdin back to the daemon",
-      "  claupe status                       Show daemon and session state",
-      "  claupe reset [--session <name>]     Reset a named session",
+      "  claupe agent <request-id>           Internal: stream stdin back to the parent",
+      "  claupe status                       List stored sessions and their resume ids",
+      "  claupe reset [--session <name>]     Forget the stored resume id for a session",
       "",
       "Flags for prompts:",
       "  -p, --print                         Accepted for claude -p compatibility (no-op)",
-      "  --session <name>                    Route request to a named session (default: \"default\")",
-      "  --resume, -r <id>                   Resume a Claude conversation by id",
+      "  --session <name>                    Persisted session name (default: \"default\")",
+      "  --resume, -r <id>                   Resume a Claude conversation by id (sticky)",
       "  --output-format <text|json|stream-json>",
-      "  --no-wait                           Enqueue and print the request id",
       "",
       "stdin is appended to the prompt when piped.",
       "",

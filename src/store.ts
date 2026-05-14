@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { dirname } from "node:path";
-import { SESSIONS_FILE } from "../paths.js";
+import { SESSIONS_FILE } from "./paths.js";
 
 interface SessionRecord {
   resumeId: string | null;
@@ -36,6 +36,11 @@ export class SessionStore {
   getResumeId(name: string): string | null {
     this.ensureLoaded();
     return this.cache.sessions[name]?.resumeId ?? null;
+  }
+
+  listSessions(): string[] {
+    this.ensureLoaded();
+    return Object.keys(this.cache.sessions).sort();
   }
 
   async setResumeId(name: string, resumeId: string | null): Promise<void> {

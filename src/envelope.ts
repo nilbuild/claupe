@@ -10,7 +10,7 @@ export function buildEnvelope(opts: { id: string; prompt: string }): string {
     "  printf '%s' \"<your final answer>\" | " + callback,
     "",
     "If the answer is long, you may stream it line by line, but use the same",
-    "command; the daemon will reassemble the bytes in order.",
+    "command; claupe will reassemble the bytes in order.",
     "",
     "User request:",
     "",

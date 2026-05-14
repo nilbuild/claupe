@@ -1,85 +1,127 @@
-import { parsePrintArgs } from "../args.js";
-import { connectToDaemon, readMessages, send } from "../client.js";
-import type { OutputFormat } from "../args.js";
-import type { ServerMessage } from "../protocol.js";
+import { randomUUID } from "node:crypto";
+import { mkdir, open } from "node:fs/promises";
+import { setTimeout as sleep } from "node:timers/promises";
+import * as pty from "node-pty";
+import { parsePrintArgs, type OutputFormat } from "../args.js";
+import { buildEnvelope } from "../envelope.js";
+import { createFifo, destroyFifo } from "../fifo.js";
+import { STATE_DIR, fifoPath } from "../paths.js";
+import { SessionStore } from "../store.js";
 
-interface FormatterState {
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+interface RunContext {
+  format: OutputFormat;
   buffer: string[];
-  requestId: string | null;
+  requestId: string;
 }
 
 export async function runPrint(argv: string[]): Promise<void> {
   const options = await parsePrintArgs(argv);
-  const socket = await connectToDaemon({ autostart: true });
+  await mkdir(STATE_DIR, { recursive: true });
 
-  send(socket, {
-    type: "enqueue",
-    session: options.session,
-    resume: options.resume,
-    prompt: options.prompt,
-    format: options.outputFormat,
-    noWait: options.noWait,
-  });
+  const store = new SessionStore();
+  await store.load();
 
-  const state: FormatterState = { buffer: [], requestId: null };
-
-  for await (const message of readMessages<ServerMessage>(socket)) {
-    if (message.type === "accepted") {
-      state.requestId = message.id;
-      if (options.noWait) {
-        process.stdout.write(`${message.id}\n`);
-        return;
-      }
-      continue;
-    }
-
-    if (message.type === "chunk") {
-      handleChunk(message.data, options.outputFormat, state);
-      continue;
-    }
-
-    if (message.type === "done") {
-      handleDone(options.outputFormat, state);
-      return;
-    }
-
-    if (message.type === "error") {
-      throw new Error(message.message);
-    }
+  const resumeId = options.resume ?? store.getResumeId(options.session);
+  if (options.resume) {
+    await store.setResumeId(options.session, options.resume);
   }
 
-  if (!options.noWait) {
-    throw new Error("connection closed before response completed");
+  const id = `req-${randomUUID()}`;
+  const fifo = fifoPath(id);
+  createFifo(fifo);
+
+  const ctx: RunContext = {
+    format: options.outputFormat,
+    buffer: [],
+    requestId: id,
+  };
+
+  let claude: pty.IPty | null = null;
+  let killed = false;
+
+  try {
+    const claudeBinary = process.env.CLAUPE_CLAUDE_BIN ?? "claude";
+    const claudeArgs = ["--dangerously-skip-permissions"];
+    if (resumeId) {
+      claudeArgs.push("--resume", resumeId);
+    }
+
+    claude = pty.spawn(claudeBinary, claudeArgs, {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 40,
+      cwd: process.cwd(),
+      env: { ...process.env },
+    });
+
+    const fifoDone = readFifo(fifo, ctx);
+
+    const exitedEarly = new Promise<never>((_, reject) => {
+      claude!.onExit(({ exitCode, signal }) => {
+        if (!killed) {
+          reject(new Error(`claude exited before responding (code=${exitCode}, signal=${signal ?? "none"})`));
+        }
+      });
+    });
+
+    const bootDelay = Number(process.env.CLAUPE_BOOT_DELAY_MS ?? "3000");
+    await sleep(bootDelay);
+
+    const envelope = buildEnvelope({ id, prompt: options.prompt });
+    claude.write(PASTE_START);
+    claude.write(envelope);
+    claude.write(PASTE_END);
+    claude.write("\r");
+
+    await Promise.race([fifoDone, exitedEarly]);
+
+    finalize(ctx);
+  } finally {
+    if (claude) {
+      killed = true;
+      try {
+        claude.kill();
+      } catch {
+        // already gone
+      }
+    }
+    destroyFifo(fifo);
   }
 }
 
-function handleChunk(data: string, format: OutputFormat, state: FormatterState): void {
-  if (format === "text") {
+async function readFifo(path: string, ctx: RunContext): Promise<void> {
+  const handle = await open(path, "r");
+  const stream = handle.createReadStream({ encoding: "utf8" });
+  await new Promise<void>((resolve, reject) => {
+    stream.on("data", (chunk) => {
+      const data = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      handleChunk(data, ctx);
+    });
+    stream.on("end", () => resolve());
+    stream.on("error", reject);
+  });
+}
+
+function handleChunk(data: string, ctx: RunContext): void {
+  if (ctx.format === "text") {
     process.stdout.write(data);
     return;
   }
-  if (format === "stream-json") {
+  ctx.buffer.push(data);
+  if (ctx.format === "stream-json") {
     process.stdout.write(`${JSON.stringify({ type: "chunk", data })}\n`);
-    state.buffer.push(data);
-    return;
   }
-  state.buffer.push(data);
 }
 
-function handleDone(format: OutputFormat, state: FormatterState): void {
-  if (format === "text") {
-    if (!state.buffer.length) {
-      // ensure trailing newline if Claude didn't send one
-    }
+function finalize(ctx: RunContext): void {
+  if (ctx.format === "text") {
     return;
   }
-  const result = state.buffer.join("");
-  if (format === "json") {
-    process.stdout.write(`${JSON.stringify({ type: "result", request_id: state.requestId, result })}\n`);
-    return;
-  }
-  if (format === "stream-json") {
-    process.stdout.write(`${JSON.stringify({ type: "result", request_id: state.requestId, result })}\n`);
-    return;
-  }
+  const result = ctx.buffer.join("");
+  process.stdout.write(
+    `${JSON.stringify({ type: "result", request_id: ctx.requestId, result })}\n`,
+  );
 }

@@ -1,14 +1,13 @@
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 export const STATE_DIR = process.env.CLAUPE_STATE_DIR
   ?? join(homedir(), ".config", "claupe");
 
-export const SOCKET_PATH = process.env.CLAUPE_SOCKET
-  ?? join(STATE_DIR, "claupe.sock");
-
 export const SESSIONS_FILE = join(STATE_DIR, "sessions.json");
 
-export const DAEMON_LOG = join(STATE_DIR, "daemon.log");
+const FIFO_DIR = process.env.CLAUPE_FIFO_DIR ?? tmpdir();
 
-export const PID_FILE = join(STATE_DIR, "daemon.pid");
+export function fifoPath(id: string): string {
+  return join(FIFO_DIR, `claupe-${id}.fifo`);
+}
