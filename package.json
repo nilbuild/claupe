@@ -4,7 +4,7 @@
   "description": "A claude -p shim that drives a real claude TUI per invocation",
   "type": "module",
   "license": "MIT",
-  "author": "Kamran Ahmed",
+  "author": "nilbuild",
   "bin": {
     "claupe": "dist/bin.js"
   },
