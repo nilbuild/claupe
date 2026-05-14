@@ -1,6 +1,7 @@
 import * as pty from "node-pty";
 import { buildEnvelope } from "./envelope.js";
 import type { PrintRequest, RequestRegistry } from "./requests.js";
+import type { SessionStore } from "./store.js";
 
 export interface SessionOptions {
   claudeBinary: string;
@@ -25,20 +26,26 @@ export class SessionRegistry {
 
   constructor(
     private requests: RequestRegistry,
+    private store: SessionStore,
     private options: SessionOptions,
   ) {}
 
   async enqueue(request: PrintRequest): Promise<void> {
-    const existing = this.sessions.get(request.session);
+    const desiredResume = request.resume ?? this.store.getResumeId(request.session);
 
-    if (existing && request.resume && existing.resumeId !== request.resume) {
+    if (request.resume) {
+      await this.store.setResumeId(request.session, request.resume);
+    }
+
+    const existing = this.sessions.get(request.session);
+    if (existing && existing.resumeId !== desiredResume) {
       await this.kill(request.session);
     }
 
     let session = this.sessions.get(request.session);
     if (!session) {
       try {
-        session = this.spawn(request.session, request.resume);
+        session = this.spawn(request.session, desiredResume);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.requests.failAndClose(request.id, `failed to start claude: ${message}`);
@@ -50,18 +57,20 @@ export class SessionRegistry {
     void this.drain(session);
   }
 
-  async kill(name: string): Promise<void> {
+  async kill(name: string, opts: { forget?: boolean } = {}): Promise<void> {
     const session = this.sessions.get(name);
-    if (!session) {
-      return;
+    if (session) {
+      session.pty.kill();
+      this.sessions.delete(name);
+      for (const pending of session.queue) {
+        this.requests.failAndClose(pending.id, "session reset before completion");
+      }
+      if (session.current) {
+        this.requests.failAndClose(session.current.id, "session reset before completion");
+      }
     }
-    session.pty.kill();
-    this.sessions.delete(name);
-    for (const pending of session.queue) {
-      this.requests.failAndClose(pending.id, "session reset before completion");
-    }
-    if (session.current) {
-      this.requests.failAndClose(session.current.id, "session reset before completion");
+    if (opts.forget) {
+      await this.store.forget(name);
     }
   }
 

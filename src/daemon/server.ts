@@ -12,6 +12,7 @@ import {
 } from "../protocol.js";
 import { RequestRegistry } from "./requests.js";
 import { SessionRegistry } from "./sessions.js";
+import { SessionStore } from "./store.js";
 
 interface ConnState {
   reader: LineReader;
@@ -31,7 +32,9 @@ export async function runDaemonServer(): Promise<void> {
   }
 
   const requests = new RequestRegistry();
-  const sessions = new SessionRegistry(requests, {
+  const store = new SessionStore();
+  await store.load();
+  const sessions = new SessionRegistry(requests, store, {
     claudeBinary: process.env.CLAUPE_CLAUDE_BIN ?? "claude",
     bootDelayMs: Number(process.env.CLAUPE_BOOT_DELAY_MS ?? "3000"),
     extraClaudeArgs: ["--dangerously-skip-permissions"],
@@ -186,7 +189,7 @@ function handleMessage(
 
   if (msg.type === "reset") {
     state.role = "control";
-    void sessions.kill(msg.session).then(() => {
+    void sessions.kill(msg.session, { forget: true }).then(() => {
       writeMessage(socket, { type: "reset-ok", session: msg.session });
       socket.end();
     });
