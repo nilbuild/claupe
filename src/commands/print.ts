@@ -25,9 +25,7 @@ export async function runPrint(argv: string[]): Promise<void> {
   await mkdir(STATE_DIR, { recursive: true });
 
   const store = new SessionStore();
-  await store.load();
-
-  const resumeId = options.resume ?? store.getResumeId(options.session);
+  const resumeId = options.resume ?? (await store.getResumeId(options.session));
   if (options.resume) {
     await store.setResumeId(options.session, options.resume);
   }

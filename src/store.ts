@@ -11,64 +11,62 @@ interface SessionFile {
   sessions: Record<string, SessionRecord>;
 }
 
-const EMPTY: SessionFile = { version: 1, sessions: {} };
-
 export class SessionStore {
-  private cache: SessionFile = EMPTY;
-  private loaded = false;
+  private cache: SessionFile | null = null;
 
-  async load(): Promise<void> {
+  async getResumeId(name: string): Promise<string | null> {
+    const data = await this.ensureLoaded();
+    return data.sessions[name]?.resumeId ?? null;
+  }
+
+  async setResumeId(name: string, resumeId: string | null): Promise<void> {
+    const data = await this.ensureLoaded();
+    const existing = data.sessions[name]?.resumeId ?? null;
+    if (existing === resumeId) {
+      return;
+    }
+    data.sessions[name] = { resumeId };
+    await this.persist();
+  }
+
+  async forget(name: string): Promise<void> {
+    const data = await this.ensureLoaded();
+    if (!(name in data.sessions)) {
+      return;
+    }
+    delete data.sessions[name];
+    await this.persist();
+  }
+
+  async listSessions(): Promise<string[]> {
+    const data = await this.ensureLoaded();
+    return Object.keys(data.sessions).sort();
+  }
+
+  private async ensureLoaded(): Promise<SessionFile> {
+    if (this.cache) {
+      return this.cache;
+    }
     try {
       const text = await fs.readFile(SESSIONS_FILE, "utf8");
       const parsed = JSON.parse(text) as SessionFile;
       if (parsed && typeof parsed === "object" && parsed.version === 1) {
         this.cache = parsed;
+        return parsed;
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
         throw err;
       }
-      this.cache = { version: 1, sessions: {} };
     }
-    this.loaded = true;
-  }
-
-  getResumeId(name: string): string | null {
-    this.ensureLoaded();
-    return this.cache.sessions[name]?.resumeId ?? null;
-  }
-
-  listSessions(): string[] {
-    this.ensureLoaded();
-    return Object.keys(this.cache.sessions).sort();
-  }
-
-  async setResumeId(name: string, resumeId: string | null): Promise<void> {
-    this.ensureLoaded();
-    const existing = this.cache.sessions[name]?.resumeId ?? null;
-    if (existing === resumeId) {
-      return;
-    }
-    this.cache.sessions[name] = { resumeId };
-    await this.persist();
-  }
-
-  async forget(name: string): Promise<void> {
-    this.ensureLoaded();
-    if (!(name in this.cache.sessions)) {
-      return;
-    }
-    delete this.cache.sessions[name];
-    await this.persist();
-  }
-
-  private ensureLoaded(): void {
-    if (!this.loaded) {
-      throw new Error("SessionStore.load() must be called before use");
-    }
+    this.cache = { version: 1, sessions: {} };
+    return this.cache;
   }
 
   private async persist(): Promise<void> {
+    if (!this.cache) {
+      return;
+    }
     await fs.mkdir(dirname(SESSIONS_FILE), { recursive: true });
     const text = `${JSON.stringify(this.cache, null, 2)}\n`;
     await fs.writeFile(SESSIONS_FILE, text);
