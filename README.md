@@ -14,7 +14,7 @@ Each invocation spawns a real `claude` TUI in a PTY, runs your prompt through it
 Needs Node 20+ and the `claude` CLI on `$PATH`.
 
 ```sh
-git clone https://github.com/kamranahmedse/claupe
+git clone https://github.com/nilbuild/claupe
 cd claupe
 npm install
 npm run build
