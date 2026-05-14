@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/bin.js",
     "dev": "tsx src/bin.ts",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
