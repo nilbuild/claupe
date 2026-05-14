@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
-import { setTimeout as sleep } from "node:timers/promises";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 import { parsePrintArgs, type OutputFormat } from "../args.js";
 import { buildEnvelope } from "../envelope.js";
@@ -10,6 +9,10 @@ import { SessionStore } from "../store.js";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
+
+const READY_IDLE_MS = Number(process.env.CLAUPE_READY_IDLE_MS ?? "500");
+const READY_MAX_WAIT_MS = Number(process.env.CLAUPE_READY_MAX_WAIT_MS ?? "15000");
+const REQUEST_TIMEOUT_MS = Number(process.env.CLAUPE_TIMEOUT_MS ?? "300000");
 
 interface RunContext {
   format: OutputFormat;
@@ -42,6 +45,29 @@ export async function runPrint(argv: string[]): Promise<void> {
   let claude: pty.IPty | null = null;
   let killed = false;
 
+  const cleanup = () => {
+    if (claude && !killed) {
+      killed = true;
+      try {
+        claude.kill();
+      } catch {
+        // already gone
+      }
+    }
+    destroyFifo(fifo);
+  };
+
+  const onSigint = () => {
+    cleanup();
+    process.exit(130);
+  };
+  const onSigterm = () => {
+    cleanup();
+    process.exit(143);
+  };
+  process.on("SIGINT", onSigint);
+  process.on("SIGTERM", onSigterm);
+
   try {
     const claudeBinary = process.env.CLAUPE_CLAUDE_BIN ?? "claude";
     const claudeArgs = ["--dangerously-skip-permissions"];
@@ -67,8 +93,7 @@ export async function runPrint(argv: string[]): Promise<void> {
       });
     });
 
-    const bootDelay = Number(process.env.CLAUPE_BOOT_DELAY_MS ?? "3000");
-    await sleep(bootDelay);
+    await waitForReady(claude, READY_IDLE_MS, READY_MAX_WAIT_MS);
 
     const envelope = buildEnvelope({ id, prompt: options.prompt });
     claude.write(PASTE_START);
@@ -76,19 +101,73 @@ export async function runPrint(argv: string[]): Promise<void> {
     claude.write(PASTE_END);
     claude.write("\r");
 
-    await Promise.race([fifoDone, exitedEarly]);
+    await raceWithTimeout(
+      Promise.race([fifoDone, exitedEarly]),
+      REQUEST_TIMEOUT_MS,
+      () => new Error(`timed out after ${REQUEST_TIMEOUT_MS}ms waiting for claude to respond`),
+    );
 
     finalize(ctx);
   } finally {
-    if (claude) {
-      killed = true;
-      try {
-        claude.kill();
-      } catch {
-        // already gone
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+    cleanup();
+  }
+}
+
+async function waitForReady(claude: pty.IPty, idleMs: number, maxWaitMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let idleTimer = setTimeout(finish, idleMs);
+    const maxTimer = setTimeout(
+      () => fail(new Error(`claude did not become idle within ${maxWaitMs}ms`)),
+      maxWaitMs,
+    );
+    const sub = claude.onData(() => {
+      if (settled) {
+        return;
       }
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(finish, idleMs);
+    });
+    function finish(): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(idleTimer);
+      clearTimeout(maxTimer);
+      sub.dispose();
+      resolve();
     }
-    destroyFifo(fifo);
+    function fail(err: Error): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(idleTimer);
+      clearTimeout(maxTimer);
+      sub.dispose();
+      reject(err);
+    }
+  });
+}
+
+async function raceWithTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  buildError: () => Error,
+): Promise<T> {
+  let handle: NodeJS.Timeout | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    handle = setTimeout(() => reject(buildError()), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (handle) {
+      clearTimeout(handle);
+    }
   }
 }
 
