@@ -62,7 +62,6 @@ export async function runPrint(argv: string[]): Promise<void> {
 
   const onInterrupt = (signal: NodeJS.Signals) => {
     if (interrupting) {
-      // Second signal: caller is desperate, force-kill ourselves immediately.
       process.kill(process.pid, "SIGKILL");
       return;
     }
@@ -70,7 +69,10 @@ export async function runPrint(argv: string[]): Promise<void> {
     hardKillClaude();
     destroyFifo(fifo);
     process.stderr.write(`\nclaupe: interrupted (${signal})\n`);
-    process.exit(signal === "SIGINT" ? 130 : 143);
+    // Bypass process.exit entirely; libuv can stall on pending PTY/FIFO fds.
+    // Setting exitCode preserves shell semantics if we somehow flush in time.
+    process.exitCode = signal === "SIGINT" ? 130 : 143;
+    process.kill(process.pid, "SIGKILL");
   };
 
   const onSigint = () => onInterrupt("SIGINT");
