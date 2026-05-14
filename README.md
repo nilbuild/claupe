@@ -58,7 +58,9 @@ Environment variables:
 | `CLAUPE_STATE_DIR` | Where `sessions.json` lives | `~/.config/claupe` |
 | `CLAUPE_FIFO_DIR` | Where per-request FIFOs are created | `$TMPDIR` |
 | `CLAUPE_CLAUDE_BIN` | Path to the `claude` binary | `claude` (from PATH) |
-| `CLAUPE_BOOT_DELAY_MS` | Time to wait after spawning Claude before pasting | `3000` |
+| `CLAUPE_READY_IDLE_MS` | PTY-idle window before pasting the envelope | `500` |
+| `CLAUPE_READY_MAX_WAIT_MS` | Max wait for the PTY to ever go idle | `15000` |
+| `CLAUPE_TIMEOUT_MS` | Max wait for claude to run the agent callback | `300000` |
 
 ## Notes
 
