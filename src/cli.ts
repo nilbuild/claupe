@@ -1,7 +1,7 @@
-import { runPrint } from "./commands/print.js";
 import { runAgent } from "./commands/agent.js";
-import { runStatus } from "./commands/status.js";
+import { runPrint } from "./commands/print.js";
 import { runReset } from "./commands/reset.js";
+import { runStatus } from "./commands/status.js";
 
 const VERSION = "0.0.1";
 
@@ -24,8 +24,9 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  if (first !== undefined && first in SUBCOMMANDS) {
-    await SUBCOMMANDS[first]!(argv.slice(1));
+  const handler = first !== undefined ? SUBCOMMANDS[first] : undefined;
+  if (handler) {
+    await handler(argv.slice(1));
     return;
   }
 
@@ -52,7 +53,7 @@ function printHelp(): void {
       "",
       "Flags for prompts:",
       "  -p, --print                         Accepted for claude -p compatibility (no-op)",
-      "  --session <name>                    Persisted session name (default: \"default\")",
+      '  --session <name>                    Persisted session name (default: "default")',
       "  --resume, -r <id>                   Resume a Claude conversation by id (sticky)",
       "  --output-format <text|json|stream-json>",
       "",

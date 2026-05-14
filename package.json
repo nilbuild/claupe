@@ -17,12 +17,17 @@
     "build": "tsc && chmod +x dist/bin.js",
     "dev": "tsx src/bin.ts",
     "clean": "rm -rf dist",
+    "fmt": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
     "@types/node": "^24.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"

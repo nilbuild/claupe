@@ -11,17 +11,9 @@ export interface SessionOnlyOptions {
   session: string;
 }
 
-const FLAGS_WITH_VALUE = new Set([
-  "--session",
-  "--resume",
-  "-r",
-  "--output-format",
-]);
+const FLAGS_WITH_VALUE = new Set(["--session", "--resume", "-r", "--output-format"]);
 
-const KNOWN_BOOLEAN_FLAGS = new Set([
-  "-p",
-  "--print",
-]);
+const KNOWN_BOOLEAN_FLAGS = new Set(["-p", "--print"]);
 
 interface ParsedArgs {
   positional: string[];
@@ -36,12 +28,13 @@ function parseRawArgs(argv: string[]): ParsedArgs {
 
   let i = 0;
   while (i < argv.length) {
-    const arg = argv[i]!;
+    const arg = argv[i];
+    if (arg === undefined) {
+      break;
+    }
 
     if (arg === "--") {
-      for (let j = i + 1; j < argv.length; j++) {
-        positional.push(argv[j]!);
-      }
+      positional.push(...argv.slice(i + 1));
       break;
     }
 

@@ -1,8 +1,7 @@
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-export const STATE_DIR = process.env.CLAUPE_STATE_DIR
-  ?? join(homedir(), ".config", "claupe");
+export const STATE_DIR = process.env.CLAUPE_STATE_DIR ?? join(homedir(), ".config", "claupe");
 
 export const SESSIONS_FILE = join(STATE_DIR, "sessions.json");
 
