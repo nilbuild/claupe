@@ -100,16 +100,12 @@ function handleConnection(
   socket.on("close", () => {
     if (state.role === "agent" && state.agentId) {
       const request = requests.get(state.agentId);
-      if (request?.client && !request.client.destroyed) {
-        writeMessage(request.client, { type: "done" });
-        request.client.end();
-      }
-      sessions.finalizeCurrent(request?.session ?? "");
-    }
-    if (state.role === "print") {
-      // Print client disconnected before completion; detach so agent bytes are dropped.
-      for (const id of [] as string[]) {
-        requests.detachClient(id);
+      if (request) {
+        if (request.client && !request.client.destroyed) {
+          writeMessage(request.client, { type: "done" });
+          request.client.end();
+        }
+        sessions.finalizeCurrent(request.session);
       }
     }
   });

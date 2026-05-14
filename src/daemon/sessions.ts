@@ -37,7 +37,13 @@ export class SessionRegistry {
 
     let session = this.sessions.get(request.session);
     if (!session) {
-      session = this.spawn(request.session, request.resume);
+      try {
+        session = this.spawn(request.session, request.resume);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.requests.failAndClose(request.id, `failed to start claude: ${message}`);
+        return;
+      }
     }
 
     session.queue.push(request);
@@ -111,7 +117,16 @@ export class SessionRegistry {
     });
 
     proc.onExit(() => {
-      this.sessions.delete(name);
+      const dying = this.sessions.get(name);
+      if (dying) {
+        if (dying.current) {
+          this.requests.failAndClose(dying.current.id, "claude exited before completing request");
+        }
+        for (const pending of dying.queue) {
+          this.requests.failAndClose(pending.id, "claude exited before request was dispatched");
+        }
+        this.sessions.delete(name);
+      }
     });
 
     const session: ActiveSession = {
