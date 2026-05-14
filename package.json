@@ -1,7 +1,7 @@
 {
   "name": "claupe",
   "version": "0.0.1",
-  "description": "A claude -p compatibility shim that drives a persistent Claude TUI",
+  "description": "A claude -p shim that drives a real claude TUI per invocation",
   "type": "module",
   "bin": {
     "claupe": "dist/bin.js"

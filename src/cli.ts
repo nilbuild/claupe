@@ -5,7 +5,11 @@ import { runReset } from "./commands/reset.js";
 
 const VERSION = "0.0.1";
 
-const SUBCOMMANDS = new Set(["agent", "status", "reset"]);
+const SUBCOMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
+  agent: runAgent,
+  status: runStatus,
+  reset: runReset,
+};
 
 export async function main(argv: string[]): Promise<void> {
   const first = argv[0];
@@ -20,19 +24,9 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  if (first !== undefined && SUBCOMMANDS.has(first)) {
-    if (first === "agent") {
-      await runAgent(argv.slice(1));
-      return;
-    }
-    if (first === "status") {
-      await runStatus(argv.slice(1));
-      return;
-    }
-    if (first === "reset") {
-      await runReset(argv.slice(1));
-      return;
-    }
+  if (first !== undefined && first in SUBCOMMANDS) {
+    await SUBCOMMANDS[first]!(argv.slice(1));
+    return;
   }
 
   const printArgs = first === "-p" || first === "--print" ? argv.slice(1) : argv;

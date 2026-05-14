@@ -46,19 +46,13 @@ export async function runPrint(argv: string[]): Promise<void> {
   let killed = false;
   let interrupting = false;
 
-  const hardKillClaude = () => {
+  const cleanup = () => {
     if (claude && !killed) {
       killed = true;
       try {
         claude.kill("SIGKILL");
-      } catch {
-        // already gone
-      }
+      } catch {}
     }
-  };
-
-  const cleanup = () => {
-    hardKillClaude();
     destroyFifo(fifo);
   };
 
@@ -68,19 +62,15 @@ export async function runPrint(argv: string[]): Promise<void> {
       return;
     }
     interrupting = true;
-    hardKillClaude();
-    destroyFifo(fifo);
+    cleanup();
     process.stderr.write(`\nclaupe: interrupted (${signal})\n`);
-    // Bypass process.exit entirely; libuv can stall on pending PTY/FIFO fds.
-    // Setting exitCode preserves shell semantics if we somehow flush in time.
     process.exitCode = signal === "SIGINT" ? 130 : 143;
+    // libuv can stall on pending pty/fifo fds, so don't trust process.exit.
     process.kill(process.pid, "SIGKILL");
   };
 
-  const onSigint = () => onInterrupt("SIGINT");
-  const onSigterm = () => onInterrupt("SIGTERM");
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  process.on("SIGINT", () => onInterrupt("SIGINT"));
+  process.on("SIGTERM", () => onInterrupt("SIGTERM"));
 
   try {
     const claudeBinary = process.env.CLAUPE_CLAUDE_BIN ?? "claude";
@@ -130,8 +120,6 @@ export async function runPrint(argv: string[]): Promise<void> {
 
     finalize(ctx);
   } finally {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
     cleanup();
   }
 }

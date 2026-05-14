@@ -1,5 +1,4 @@
-import { existsSync } from "node:fs";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import { fifoPath } from "../paths.js";
 
 export async function runAgent(argv: string[]): Promise<void> {
