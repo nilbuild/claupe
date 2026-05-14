@@ -42,27 +42,39 @@ export async function runPrint(argv: string[]): Promise<void> {
 
   let claude: pty.IPty | null = null;
   let killed = false;
+  let interrupting = false;
 
-  const cleanup = () => {
+  const hardKillClaude = () => {
     if (claude && !killed) {
       killed = true;
       try {
-        claude.kill();
+        claude.kill("SIGKILL");
       } catch {
         // already gone
       }
     }
+  };
+
+  const cleanup = () => {
+    hardKillClaude();
     destroyFifo(fifo);
   };
 
-  const onSigint = () => {
-    cleanup();
-    process.exit(130);
+  const onInterrupt = (signal: NodeJS.Signals) => {
+    if (interrupting) {
+      // Second signal: caller is desperate, force-kill ourselves immediately.
+      process.kill(process.pid, "SIGKILL");
+      return;
+    }
+    interrupting = true;
+    hardKillClaude();
+    destroyFifo(fifo);
+    process.stderr.write(`\nclaupe: interrupted (${signal})\n`);
+    process.exit(signal === "SIGINT" ? 130 : 143);
   };
-  const onSigterm = () => {
-    cleanup();
-    process.exit(143);
-  };
+
+  const onSigint = () => onInterrupt("SIGINT");
+  const onSigterm = () => onInterrupt("SIGTERM");
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
 
