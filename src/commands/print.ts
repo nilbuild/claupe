@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
-import * as pty from "node-pty";
+import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 import { parsePrintArgs, type OutputFormat } from "../args.js";
 import { buildEnvelope } from "../envelope.js";
 import { createFifo, destroyFifo } from "../fifo.js";
