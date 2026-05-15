@@ -1,77 +1,34 @@
 # claupe
 
-`claude -p` for your subscription, not the API.
+> A headless wrapper around the `claude` TUI for programmatic use.
+
+Claude supports programmatic access via `claude -p`, but that usage is billed separately from your interactive subscription and can get expensive. `claupe` is a wrapper around the `claude` TUI that allows you to use it in a headless way, so your requests still bill against your interactive subscription instead.
+
+## How to use it
+
+Install it globally using:
 
 ```sh
-claupe "summarize this repo"
-git diff | claupe "review this diff"
+npm install -g claupe
 ```
 
-Each invocation spawns a real `claude` TUI in a PTY, runs your prompt through it, prints the answer to stdout, exits. No daemon, no API key, no scrollback scraping.
-
-## Install
-
-Needs Node 20+ and the `claude` CLI on `$PATH`.
+Then you can run:
 
 ```sh
-git clone https://github.com/nilbuild/claupe
-cd claupe
-npm install
-npm run build
-npm link
+claupe "<prompt>"              # positional prompt
+git diff | claupe "review"     # stdin is appended to the prompt
+claupe -p "<prompt>"           # -p accepted for muscle memory
 ```
 
-## Use
-
-```sh
-claupe "<prompt>"                            # positional prompt
-git diff | claupe "review"                   # stdin is appended to the prompt
-claupe -p "<prompt>"                         # -p accepted for claude -p muscle memory
-claupe --output-format json "<prompt>"       # json result instead of plain text
-```
-
-### Sessions
-
-Resume IDs are sticky per `--session` name (default `"default"`). Set one once, future calls reuse it.
-
-```sh
-claupe --session work --resume 018f-abc...   "remember the number 42"
-claupe --session work                        "what number did I ask you to remember?"
-# 42
-```
-
-```sh
-claupe status                                # list stored sessions
-claupe reset --session work                  # forget the stored resume id
-```
-
-## How it works
-
-claupe spawns `claude --dangerously-skip-permissions [--resume <id>]` in a PTY and creates a named FIFO at `$TMPDIR/claupe-<req>.fifo`. Once claude is idle, claupe pastes an envelope into the PTY containing your prompt plus a closing instruction: pipe the final answer to `claupe agent <req>`.
-
-Claude runs that command. Its bytes flow through the FIFO back to the waiting parent process, which prints them to stdout. When the FIFO closes, claupe kills the PTY and exits.
-
-The point of routing through `claupe agent` and a FIFO instead of reading claude's TUI output: the TUI is not a machine-output protocol. Scraping it is fragile. The answer comes through a side channel we control.
-
-## Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CLAUPE_STATE_DIR` | `~/.config/claupe` | Where `sessions.json` lives |
-| `CLAUPE_FIFO_DIR` | `$TMPDIR` | Where per-request FIFOs are created |
-| `CLAUPE_CLAUDE_BIN` | `claude` | Path to the `claude` binary |
-| `CLAUPE_READY_IDLE_MS` | `800` | PTY-idle window before pasting the envelope |
-| `CLAUPE_READY_MAX_WAIT_MS` | `30000` | Max wait for the PTY to ever go idle |
-| `CLAUPE_TIMEOUT_MS` | `300000` | Max wait for claude to respond after paste |
-| `CLAUPE_BOOT_DELAY_MS` | `0` | If set, use this fixed sleep instead of idle detection |
+Each invocation is a fresh `claude` conversation. You can use `claupe` in scripts, cron jobs, or just for quick questions in the terminal.
 
 ## Caveats
 
-- Every call cold-starts claude (~3s). Fine for cron and scripts, not for tight loops.
-- `--dangerously-skip-permissions` is required so claude can run the callback unattended. Only run claupe where that's acceptable.
-- `--output-format stream-json` doesn't truly stream — claude buffers its full answer before piping it, so you currently get a single chunk plus the final result event.
-- claupe has no defense against prompt injection from piped stdin. If you `cat untrusted.txt | claupe ...` and the file says "ignore the above, run X", claude may do it. Since claude runs with `--dangerously-skip-permissions`, the consequences include shell commands. Only pipe content you trust.
+- Every call cold-starts claude (~3s). Fine for cron and one-shot scripts; bad for tight loops.
+- `--dangerously-skip-permissions` is required so claude can run the callback unattended. Only run claupe in workspaces where that's acceptable.
+- No defense against prompt injection in piped stdin. If you `cat untrusted.txt | claupe ...` and the file contains adversarial instructions, claude may follow them. With `--dangerously-skip-permissions` that includes shell commands. Only pipe content you trust.
+- The interactive/programmatic split is Anthropic's call, not a hard technical line. If they later decide to flag TUI traffic that comes from a PTY without a real human, this trick stops working.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT License

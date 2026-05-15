@@ -1,15 +1,7 @@
 import { runAgent } from "./commands/agent.js";
 import { runPrint } from "./commands/print.js";
-import { runReset } from "./commands/reset.js";
-import { runStatus } from "./commands/status.js";
 
 const VERSION = "0.0.1";
-
-const SUBCOMMANDS: Record<string, (argv: string[]) => Promise<void>> = {
-  agent: runAgent,
-  status: runStatus,
-  reset: runReset,
-};
 
 export async function main(argv: string[]): Promise<void> {
   const first = argv[0];
@@ -24,9 +16,8 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  const handler = first !== undefined ? SUBCOMMANDS[first] : undefined;
-  if (handler) {
-    await handler(argv.slice(1));
+  if (first === "agent") {
+    await runAgent(argv.slice(1));
     return;
   }
 
@@ -48,13 +39,9 @@ function printHelp(): void {
       "Usage:",
       "  claupe [flags] <prompt>             Send a prompt and wait for the answer",
       "  claupe agent <request-id>           Internal: stream stdin back to the parent",
-      "  claupe status                       List stored sessions and their resume ids",
-      "  claupe reset [--session <name>]     Forget the stored resume id for a session",
       "",
       "Flags for prompts:",
       "  -p, --print                         Accepted for claude -p compatibility (no-op)",
-      '  --session <name>                    Persisted session name (default: "default")',
-      "  --resume, -r <id>                   Resume a Claude conversation by id (sticky)",
       "  --output-format <text|json|stream-json>",
       "",
       "stdin is appended to the prompt when piped.",

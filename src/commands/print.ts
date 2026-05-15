@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 import { type OutputFormat, parsePrintArgs } from "../args.js";
 import { buildEnvelope } from "../envelope.js";
 import { createFifo, destroyFifo } from "../fifo.js";
-import { fifoPath, STATE_DIR } from "../paths.js";
-import { SessionStore } from "../store.js";
+import { fifoPath } from "../paths.js";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
@@ -24,13 +23,6 @@ interface RunContext {
 
 export async function runPrint(argv: string[]): Promise<void> {
   const options = await parsePrintArgs(argv);
-  await mkdir(STATE_DIR, { recursive: true });
-
-  const store = new SessionStore();
-  const resumeId = options.resume ?? (await store.getResumeId(options.session));
-  if (options.resume) {
-    await store.setResumeId(options.session, options.resume);
-  }
 
   const id = `req-${randomUUID()}`;
   const fifo = fifoPath(id);
@@ -75,9 +67,6 @@ export async function runPrint(argv: string[]): Promise<void> {
   try {
     const claudeBinary = process.env.CLAUPE_CLAUDE_BIN ?? "claude";
     const claudeArgs = ["--dangerously-skip-permissions"];
-    if (resumeId) {
-      claudeArgs.push("--resume", resumeId);
-    }
 
     const proc = pty.spawn(claudeBinary, claudeArgs, {
       name: "xterm-256color",

@@ -2,16 +2,10 @@ export type OutputFormat = "text" | "json" | "stream-json";
 
 export interface PrintOptions {
   prompt: string;
-  session: string;
-  resume: string | null;
   outputFormat: OutputFormat;
 }
 
-export interface SessionOnlyOptions {
-  session: string;
-}
-
-const FLAGS_WITH_VALUE = new Set(["--session", "--resume", "-r", "--output-format"]);
+const FLAGS_WITH_VALUE = new Set(["--output-format"]);
 
 const KNOWN_BOOLEAN_FLAGS = new Set(["-p", "--print"]);
 
@@ -100,17 +94,9 @@ export async function parsePrintArgs(argv: string[]): Promise<PrintOptions> {
     throw new Error("no prompt provided (positional args or piped stdin)");
   }
 
-  const session = parsed.flags.get("--session") ?? "default";
-  const resume = parsed.flags.get("--resume") ?? parsed.flags.get("-r") ?? null;
   const outputFormat = parseOutputFormat(parsed.flags.get("--output-format"));
 
-  return { prompt, session, resume, outputFormat };
-}
-
-export function parseSessionOnlyArgs(argv: string[]): SessionOnlyOptions {
-  const parsed = parseRawArgs(argv);
-  const session = parsed.flags.get("--session") ?? "default";
-  return { session };
+  return { prompt, outputFormat };
 }
 
 async function readStdinIfPiped(): Promise<string | null> {
